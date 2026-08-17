@@ -1,7 +1,10 @@
 package com.example.productcatalog.security;
 
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -12,141 +15,89 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.List;
-
 @Configuration
 public class SecurityConfig {
 
-    private final JwtFilter jwtFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    public SecurityConfig(JwtFilter jwtFilter) {
-        this.jwtFilter = jwtFilter;
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
     }
 
-    // =========================
-    // PASSWORD ENCODER
-    // =========================
-
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    // =========================
-    // SECURITY FILTER CHAIN
-    // =========================
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(
-            HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
+            // Enable CORS
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // JWT authentication does not use CSRF
-                .csrf(csrf -> csrf.disable())
+            // Disable CSRF because this is a JWT-based REST API
+            .csrf(csrf -> csrf.disable())
 
-                // CORS
-                .cors(cors -> cors.configurationSource(
-                        corsConfigurationSource()
-                ))
+            // JWT authentication = stateless
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
 
-                // JWT is stateless
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(
-                                SessionCreationPolicy.STATELESS
-                        )
-                )
+            .authorizeHttpRequests(auth -> auth
 
-                // =========================
-                // AUTHORIZATION
-                // =========================
+                // CORS preflight requests
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                .authorizeHttpRequests(auth -> auth
+                // Authentication endpoints
+                .requestMatchers("/api/auth/**").permitAll()
 
-                        // Login + Signup
-                        .requestMatchers(
-                                "/api/auth/**"
-                        ).permitAll()
+                // Public product/category endpoints
+                .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
 
-                        // =========================
-                        // PUBLIC STORE
-                        // =========================
+                // Everything else requires JWT
+                .anyRequest().authenticated()
+            )
 
-                        // All product endpoints
-                        .requestMatchers(
-                                "/api/products/**"
-                        ).permitAll()
-
-                        // All category endpoints
-                        .requestMatchers(
-                                "/api/categories/**"
-                        ).permitAll()
-
-                        // =========================
-                        // PROTECTED ENDPOINTS
-                        // =========================
-
-                        // Everything else requires JWT
-                        .anyRequest().authenticated()
-                )
-
-                // =========================
-                // JWT FILTER
-                // =========================
-
-                .addFilterBefore(
-                        jwtFilter,
-                        UsernamePasswordAuthenticationFilter.class
-                );
+            // JWT filter
+            .addFilterBefore(
+                jwtAuthenticationFilter,
+                UsernamePasswordAuthenticationFilter.class
+            );
 
         return http.build();
     }
 
-    // =========================
-    // CORS CONFIGURATION
-    // =========================
-
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
 
-        CorsConfiguration configuration =
-                new CorsConfiguration();
+        CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(
-                List.of(
-                        "http://localhost:5173"
-                )
-        );
+        configuration.setAllowedOrigins(List.of(
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "https://e-commerce-hazel-psi.vercel.app"
+        ));
 
-        configuration.setAllowedMethods(
-                List.of(
-                        "GET",
-                        "POST",
-                        "PUT",
-                        "PATCH",
-                        "DELETE",
-                        "OPTIONS"
-                )
-        );
+        configuration.setAllowedMethods(List.of(
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH",
+            "OPTIONS"
+        ));
 
-        configuration.setAllowedHeaders(
-                List.of(
-                        "Authorization",
-                        "Content-Type",
-                        "Accept"
-                )
-        );
+        configuration.setAllowedHeaders(List.of("*"));
 
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source =
-                new UrlBasedCorsConfigurationSource();
+            new UrlBasedCorsConfigurationSource();
 
-        source.registerCorsConfiguration(
-                "/**",
-                configuration
-        );
+        source.registerCorsConfiguration("/**", configuration);
 
         return source;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }
