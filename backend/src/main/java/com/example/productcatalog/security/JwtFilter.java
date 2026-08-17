@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -28,103 +27,60 @@ public class JwtFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
-            FilterChain filterChain)
-            throws ServletException, IOException {
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
         String header = request.getHeader("Authorization");
 
-        System.out.println(
-                "JWT FILTER: "
-                        + request.getMethod()
-                        + " "
-                        + request.getRequestURI()
-        );
+        // OPTIONS requests are handled by CORS configuration
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
-        // ==========================================
-        // NO AUTHORIZATION HEADER
-        // ==========================================
-
+        // No Authorization header
         if (header == null || header.isBlank()) {
-
-            System.out.println(
-                    "JWT FILTER: No Authorization header"
-            );
-
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ==========================================
-        // INVALID AUTHORIZATION HEADER
-        // ==========================================
-
+        // Authorization header must use Bearer token
         if (!header.startsWith("Bearer ")) {
-
-            System.out.println(
-                    "JWT FILTER: Invalid Authorization header"
-            );
-
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ==========================================
-        // EXTRACT TOKEN
-        // ==========================================
+        String token = header.substring(7).trim();
 
-        String token = header.substring(7);
+        if (token.isEmpty()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         try {
 
-            // ==========================================
-            // EXTRACT EMAIL FROM JWT
-            // ==========================================
+            // Extract email from JWT
+            String email = jwtService.extractEmail(token);
 
-            String email =
-                    jwtService.extractEmail(token);
+            if (email != null && !email.isBlank()) {
 
-            System.out.println(
-                    "JWT FILTER: Token belongs to "
-                            + email
-            );
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                email,
+                                null,
+                                Collections.emptyList()
+                        );
 
-            // ==========================================
-            // CREATE AUTHENTICATION
-            // ==========================================
-
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            email,
-                            null,
-                            Collections.emptyList()
-                    );
-
-            // ==========================================
-            // SET SECURITY CONTEXT
-            // ==========================================
-
-            SecurityContextHolder
-                    .getContext()
-                    .setAuthentication(authentication);
-
-            System.out.println(
-                    "JWT FILTER: Authentication set"
-            );
+                SecurityContextHolder
+                        .getContext()
+                        .setAuthentication(authentication);
+            }
 
         } catch (Exception e) {
 
-            System.out.println(
-                    "JWT FILTER: Invalid token - "
-                            + e.getMessage()
-            );
-
-            SecurityContextHolder
-                    .clearContext();
+            // Invalid/expired JWT
+            SecurityContextHolder.clearContext();
         }
-
-        // ==========================================
-        // CONTINUE REQUEST
-        // ==========================================
 
         filterChain.doFilter(request, response);
     }
